@@ -1,61 +1,80 @@
 import streamlit as st
+import pandas as pd
 import requests
-import numpy as np
 import matplotlib.pyplot as plt
+from datetime import datetime
 
-# Page configuration
-st.set_page_config(page_title="IoT Threat Detection", layout="centered")
+st.set_page_config(page_title="IoT Threat Classification", layout="centered")
 
-# UI headers and instructions
-st.title("🔐 IoT Security Threat Detection with Explainable AI")
-st.markdown("Enter comma-separated values for prediction:")
-st.markdown("📌 Format: packet_size, duration, protocol (0-TCP,1-UDP,2-ICMP), src_bytes, dst_bytes")
+st.title("🔍 IoT Threat Classification Dashboard")
+st.markdown("Enter network packet details below to classify the traffic type.")
 
-# User input
-user_input = st.text_input("Enter feature values:", "512,1.2,1,2000,3000")
+# Initialize prediction history
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-# Detect button
-if st.button("Detect Anomaly"):
+# Input form
+with st.form("input_form"):
+    packet_size = st.number_input("Packet Size", min_value=1, value=500)
+    duration = st.number_input("Duration (s)", min_value=0.01, value=1.0)
+    protocol = st.selectbox("Protocol", options=["TCP", "UDP", "ICMP"], index=0)
+    src_bytes = st.number_input("Source Bytes", min_value=0, value=1000)
+    dst_bytes = st.number_input("Destination Bytes", min_value=0, value=1000)
+    
+    submitted = st.form_submit_button("Classify Threat")
+
+# Protocol encoding
+protocol_map = {"TCP": 0, "UDP": 1, "ICMP": 2}
+
+# API interaction
+if submitted:
+    data = {
+        "packet_size": packet_size,
+        "duration": duration,
+        "protocol": protocol_map[protocol],
+        "src_bytes": src_bytes,
+        "dst_bytes": dst_bytes
+    }
+
     try:
-        values = [float(x.strip()) for x in user_input.split(",")]
+        response = requests.post("http://127.0.0.1:5000/predict", json=data)
+        result = response.json()
+        threat_type = result['threat_type']
 
-        if len(values) != 5:
-            st.error("⚠️ Please enter exactly 5 values.")
-        else:
-            # Call the Flask API
-            response = requests.post(
-                "http://127.0.0.1:5000/predict",
-                json={"features": values}
-            )
+        # Log prediction
+        st.session_state.history.append({
+            "time": datetime.now(),
+            "threat": threat_type
+        })
 
-            if response.status_code == 200:
-                result = response.json()
-                prediction = result["prediction"]
-                shap_vals = result["shap_values"]
-                feature_data = result["features"]
+        st.success(f"🛡️ Predicted Threat Type: **{threat_type}**")
 
-                label = "🚨 Anomaly Detected" if prediction == 1 else "✅ Normal Activity"
-                st.success(f"Prediction: {label}")
-
-                # Show feature values
-                st.markdown("### 📊 Input Feature Breakdown")
-                for key, val in feature_data.items():
-                    st.write(f"{key}: {val}")
-
-                # SHAP bar plot
-                st.markdown("### 🧠 SHAP Feature Impact")
-                fig, ax = plt.subplots()
-                # If shap_vals is 2D (multi-output), pick SHAP values for class 1
-                if isinstance(shap_vals[0], list) or (np.array(shap_vals).ndim > 1 and len(shap_vals[0]) > 1):
-                    # Assuming class 1 is the positive class (anomaly)
-                    shap_vals = [row[1] for row in shap_vals]
-
-                # Plot the SHAP values
-                ax.barh(list(feature_data.keys()), shap_vals)
-                ax.set_xlabel("SHAP Value")
-                ax.set_title("Feature Contribution to Prediction")
-                st.pyplot(fig)
-            else:
-                st.error("❌ Server error: Unable to get prediction.")
     except Exception as e:
-        st.error(f"❌ Invalid input format: {e}")
+        st.error(f"Error: {e}")
+
+# Display charts if we have any history
+if st.session_state.history:
+    history_df = pd.DataFrame(st.session_state.history)
+
+    # Bar Chart: Threat frequency
+    st.subheader("📊 Threat Type Distribution")
+    threat_counts = history_df['threat'].value_counts()
+    st.bar_chart(threat_counts)
+
+    # Pie Chart
+    st.subheader("🧩 Threat Type Proportions")
+    fig1, ax1 = plt.subplots()
+    threat_counts.plot.pie(autopct="%1.1f%%", ax=ax1, startangle=90)
+    ax1.set_ylabel('')
+    ax1.set_title("Threat Breakdown")
+    st.pyplot(fig1)
+
+    # # Line Chart: Predictions over time
+    # st.subheader("📈 Prediction Timeline")
+    # # timeline_df = history_df.groupby(pd.to_datetime(history_df['time']).dt.floor('min')).size()
+    # # timeline_df.name = "Predictions"
+    # # st.line_chart(timeline_df)
+
+    # timeline_df = history_df.groupby(pd.to_datetime(history_df['time']).dt.floor('min')).size()
+    # timeline_df.name = "Predictions"
+    # st.line_chart(timeline_df)

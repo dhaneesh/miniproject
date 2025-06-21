@@ -1,34 +1,34 @@
 import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-import shap
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import classification_report
 import joblib
 
-# Load dataset (replace with actual dataset)
-data = pd.read_csv("iot_security_data.csv")
+# Load dataset
+df = pd.read_csv('iot_security__multi_data.csv')
 
-# Data Preprocessing
-X = data.drop("attack_label", axis=1)
-y = data["attack_label"]
+# Features and labels
+X = df.drop(columns=['attack_type'])
+y = df['attack_type']
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# Encode multi-class target
+encoder = LabelEncoder()
+y_encoded = encoder.fit_transform(y)
 
-# Train Model
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42)
+
+# Train model
 model = RandomForestClassifier(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
 
-# Save Model
-joblib.dump(model, "anomaly_model.pkl")
-
-# SHAP Explainability
-explainer = shap.Explainer(model)
-shap_values = explainer(X_test)
-
-# Save SHAP values
-joblib.dump(shap_values, "shap_values.pkl")
-
-# Evaluate Model
+# Evaluate
 y_pred = model.predict(X_test)
-print("Model Accuracy:", accuracy_score(y_test, y_pred))
+print(classification_report(y_test, y_pred, target_names=encoder.classes_))
+
+# Save model and encoder
+joblib.dump(model, 'anomaly_model.pkl')
+joblib.dump(encoder, 'label_encoder.pkl')
+
+print("✅ Model and encoder saved.")
