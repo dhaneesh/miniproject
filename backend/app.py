@@ -1,33 +1,28 @@
-from flask import Flask, request, jsonify
-import numpy as np
-import pandas as pd
 import joblib
-import shap
-
-# Load model
-model = joblib.load("anomaly_model.pkl")
-feature_names = ['packet_size', 'duration', 'protocol', 'src_bytes', 'dst_bytes']
-
-# Initialize SHAP explainer with background data
-X_background = pd.DataFrame([np.zeros(len(feature_names))], columns=feature_names)
-explainer = shap.Explainer(model, X_background)
+import pandas as pd
+from flask import Flask, request, jsonify
+from email_utils import send_email_alert
+from datetime import datetime
 
 app = Flask(__name__)
 
-@app.route("/predict", methods=["POST"])
+# Load model and label encoder
+model = joblib.load('anomaly_model.pkl')
+encoder = joblib.load('label_encoder.pkl')
+
+@app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
-    print(data)
-    input_features = pd.DataFrame([data["features"]], columns=feature_names)
+    input_df = pd.DataFrame([data])
+    prediction = model.predict(input_df)
+    predicted_label = encoder.inverse_transform(prediction)[0]
 
-    prediction = model.predict(input_features)[0]
-    shap_values = explainer(input_features)
+     # 🔔 Send email if not normal
+    if predicted_label.lower() != "normal":
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        send_email_alert(predicted_label, timestamp, to_email="alappats098@gmail.com")
+                         
+    return jsonify({'threat_type': predicted_label})
 
-    return jsonify({
-        "prediction": int(prediction),
-        "shap_values": shap_values.values[0].tolist(),
-        "features": input_features.iloc[0].to_dict()
-    })
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
